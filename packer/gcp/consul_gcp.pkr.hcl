@@ -24,7 +24,7 @@ variable "image_family" {
   default = "hashistack"
 }
 variable "source_image_family" {
-  default = "debian-11"
+  default = "debian-12"
 }
 variable "hcp_bucket_name" {
   description = "HCP Bucket Name"
@@ -36,7 +36,14 @@ locals {
   nomad_version = regex_replace(var.nomad_version,"\\.+|\\+","-")
 }
 
-
+packer {
+  required_plugins {
+    googlecompute = {
+      source  = "github.com/hashicorp/googlecompute"
+      version = ">= 1.0.0"
+    }
+  }
+}
 source "googlecompute" "consul_nomad" {
   project_id = var.gcp_project
   source_image_family = var.source_image_family
@@ -58,7 +65,7 @@ Image for Consul, Nomad and Vault
     EOT
     bucket_labels = {
       "hashicorp"    = "Vault,Consul,Nomad",
-      "owner" = "dcanadillas",
+      "owner" = "pablogdiaz",
       "platform" = "hashicorp",
     }
   }
