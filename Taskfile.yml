@@ -1,0 +1,29 @@
+version: '3'
+
+tasks:
+  init:
+    desc: Initialize Terraform
+    cmds:
+      - terraform init
+
+  plan:
+    desc: Run terraform plan
+    cmds:
+      - terraform plan
+
+  apply:
+    desc: Apply the Terraform configuration
+    cmds:
+      - terraform apply -auto-approve
+
+  destroy:
+    desc: Destroy the Terraform-managed infrastructure
+    cmds:
+      - terraform destroy -auto-approve
+
+  all:
+    desc: Run init, plan, and apply
+    cmds:
+      - task: init
+      - task: plan
+      - task: apply
