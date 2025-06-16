@@ -35,7 +35,7 @@ source_image_family = "debian-12"
 >    EOT
 >    bucket_labels = {
 >      "hashicorp"    = "Vault,Consul,Nomad",
->      "owner" = "dcanadillas",
+>      "owner" = "pablogd",
 >      "platform" = "hashicorp",
 >    }
 >  }

@@ -58,17 +58,17 @@ source "googlecompute" "consul_nomad" {
 
 
 build {
-  hcp_packer_registry {
-    bucket_name = var.hcp_bucket_name
-    description = <<EOT
-Image for Consul, Nomad and Vault
-    EOT
-    bucket_labels = {
-      "hashicorp"    = "Vault,Consul,Nomad",
-      "owner" = "pablogdiaz",
-      "platform" = "hashicorp",
-    }
-  }
+#  hcp_packer_registry {
+#    bucket_name = var.hcp_bucket_name
+#    description = <<EOT
+#Image for Consul, Nomad and Vault
+#    EOT
+#    bucket_labels = {
+#      "hashicorp"    = "Vault,Consul,Nomad",
+#      "owner" = "pablogdiaz",
+#      "platform" = "hashicorp",
+#    }
+#  }
   sources = ["sources.googlecompute.consul_nomad"]
   provisioner "shell" {
     scripts = ["../consul_prep.sh","../nomad_prep.sh"]
