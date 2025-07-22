@@ -210,17 +210,18 @@ consul partition list
 ```
 
 #### Step 3.2: Create Admin Partition Tokens
+
+**Important Note**: ACL roles and policies are created in the `default` partition but can grant access to other partitions. Tokens should be created in the `default` partition without specifying the partition parameter.
+
 ```bash
-# Create k8s-west1 admin token
+# Create k8s-west1 admin token (created in default partition)
 consul acl token create \
   -description "Admin token for k8s-west1 partition" \
-  -partition "k8s-west1" \
   -role-name "k8s-west1-admin" | tee consul/admin-partitions/tokens/k8s-west1-admin-token.txt
 
-# Create k8s-southwest1 admin token
+# Create k8s-southwest1 admin token (created in default partition)
 consul acl token create \
   -description "Admin token for k8s-southwest1 partition" \
-  -partition "k8s-southwest1" \
   -role-name "k8s-southwest1-admin" | tee consul/admin-partitions/tokens/k8s-southwest1-admin-token.txt
 
 # Extract token IDs
@@ -501,13 +502,35 @@ curl $API_GW_DC2/backend/development
 
 ## 🔍 Troubleshooting Commands
 
+### Common ACL Issues
+
+**Error: "No such ACL role with name"**
+- ACL roles and policies must be created in the `default` partition
+- Tokens are created in the `default` partition but can access other partitions via roles
+- Don't specify `-partition` when creating tokens for admin partition access
+
+**Error: "No such ACL policy with name"**
+- Verify policy exists: `consul acl policy list | grep <policy-name>`
+- Check policy partition: `consul acl policy read -name <policy-name>`
+
+### Verification Commands
+
 ```bash
 # Check partition status
 consul partition read k8s-west1
 consul partition read k8s-southwest1
 
+# Check ACL components
+consul acl policy list | grep k8s-southwest1
+consul acl role list | grep k8s-southwest1
+consul acl token list | grep k8s-southwest1
+
 # Check ACL tokens
 consul acl token read -id <token-id>
+
+# Verify role and policy linkage
+consul acl role read -name "k8s-southwest1-admin"
+consul acl policy read -name "k8s-southwest1-admin-policy"
 
 # Check service mesh connectivity
 consul intention check frontend backend.development.k8s-southwest1
