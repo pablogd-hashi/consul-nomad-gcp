@@ -1,291 +1,473 @@
-# GKE Southwest Cluster - Admin Partition Integration
+# GKE Southwest Cluster - Consul Admin Partitions Demo
 
-This directory contains the configuration for deploying a GKE cluster in Europe Southwest region as part of the multi-region admin partition strategy.
+This directory contains the configuration for deploying a GKE cluster as a Consul admin partition client, connecting to the main DC1 HashiStack cluster.
 
 ## Overview
 
 - **Region**: `europe-southwest1`
-- **Admin Partition**: `k8s-southwest`
+- **Admin Partition**: `k8s-southwest1`
 - **Cluster Name**: `gke-southwest`
-- **Purpose**: Secondary region for testing, acceptance, and disaster recovery
-- **Network**: `10.20.0.0/24` (pods: `10.21.0.0/16`, services: `10.22.0.0/16`)
+- **Purpose**: Demo environment for Consul admin partitions with service mesh
+- **External Consul Servers**: Connects to DC1 cluster (3 servers)
 
-## Multi-Region Strategy
+## Architecture
 
-### Admin Partition Architecture
 ```
-Europe Southwest1 (k8s-southwest partition)
-├── DTAP Environments:
-│   ├── backend-test         # Testing environment
-│   ├── backend-acceptance   # Acceptance environment  
-│   ├── backend-prod         # Production environment
-│   ├── data-test           # Data services testing
-│   ├── data-acceptance     # Data services acceptance
-│   └── data-prod           # Data services production
-└── Cross-partition communication with k8s-west
+┌─────────────────────────────────────────────────────┐
+│ DC1 HashiStack Cluster (Primary)                   │
+│ ├── Consul Enterprise Servers (3x)                 │
+│ ├── Nomad Enterprise Servers (3x)                  │
+│ └── Bootstrap ACL Tokens & CA Certificates         │
+└─────────────────┬───────────────────────────────────┘
+                  │
+                  │ Admin Partition Connection
+                  │
+┌─────────────────▼───────────────────────────────────┐
+│ GKE Southwest Cluster (k8s-southwest1 Partition)   │
+│ ├── Consul Connect Inject                          │
+│ ├── Mesh Gateway (cross-partition communication)   │
+│ ├── Service Mesh for applications                  │
+│ └── DTAP Environment Support                       │
+└─────────────────────────────────────────────────────┘
 ```
 
-### Regional Responsibilities
-| Component | Europe West1 (k8s-west) | Europe Southwest1 (k8s-southwest) |
-|-----------|-------------------------|-----------------------------------|
-| **Frontend** | ✅ Primary | 🔄 Failover |
-| **API Gateway** | ✅ Primary | 🔄 Failover |
-| **Backend Services** | 🔄 Failover | ✅ Primary |
-| **Data Services** | 🔄 Failover | ✅ Primary |
-| **Monitoring** | ✅ Primary | 📊 Regional |
+## 🚀 Quick Demo Deployment
 
-## Quick Start
+### Prerequisites
 
-### 1. Deploy the Infrastructure
+1. **GKE Cluster**: Deployed and kubectl configured
+2. **DC1 Cluster**: HashiStack cluster running with Consul Enterprise
+3. **Enterprise License**: Valid Consul Enterprise license
+4. **Helm**: Installed and configured
+
+### Step 1: Validate Configuration
+
+Run the validation script to ensure certificates and configuration are ready:
 
 ```bash
-# Use task runner for streamlined deployment
-task deploy-gke-southwest
-
-# Or deploy manually
-cd clusters/gke-southwest/terraform
-terraform init && terraform apply
+cd clusters/gke-southwest
+./validate-certs.sh
 ```
 
-### 2. Configure kubectl Access
+**Expected Output:**
+```
+🔍 Validating Consul certificates and configuration for GKE Southwest...
+✅ Certificate files exist
+✅ Certificate and key are valid
+✅ Certificate and private key match
+📅 Certificate expires: Jul  7 06:43:51 2030 GMT
+✅ External server IPs configured correctly
+✅ k8sAuthMethodHost configured correctly
+✅ Admin partition name configured correctly (k8s-southwest1)
 
-```bash
-# Authenticate with the cluster
-task gke-sw-auth
-
-# Verify cluster access
-kubectl get nodes
-kubectl config current-context
+🎉 All validations passed! GKE Southwest cluster ready for Consul deployment.
 ```
 
-### 3. Setup Admin Partition and Consul
+### Step 2: Set Environment Variables
 
-#### Step 3.1: Prepare Environment
 ```bash
-# Set up environment variables
-export CONSUL_ENT_LICENSE="your-enterprise-license"
-export CONSUL_BOOTSTRAP_TOKEN="bootstrap-token-from-dc1"
+# Required: Set your Consul Enterprise license
+export CONSUL_ENT_LICENSE="02MV4UU43BK5HGYYTOJZWFQMTMNNEWU33JKZXXMZJMIFCVK2BNFHGKV2DGRGEOSJ2..."
 
-# Copy CA certificates from DC1 cluster
-cp clusters/dc1/terraform/consul-agent-ca*.pem clusters/gke-southwest/manifests/
+# Optional: If you have DC1 bootstrap token (script will create placeholder if not)
+export CONSUL_BOOTSTRAP_TOKEN="your-bootstrap-token-from-dc1"
 ```
 
-#### Step 3.2: Create Admin Partition
+### Step 3: Create Kubernetes Secrets (Automated)
+
+Use the automated secret creation script:
+
 ```bash
-# Connect to DC1 Consul server and create the partition
-export CONSUL_HTTP_ADDR="http://<dc1-server-ip>:8500"
-export CONSUL_HTTP_TOKEN="<bootstrap-token>"
-
-consul partition create -name k8s-southwest -description "Europe Southwest1 GKE Partition"
-
-# Create partition token
-consul acl token create \
-  -description "k8s-southwest partition token" \
-  -partition k8s-southwest \
-  -policy-name admin-policy
+./create-consul-secrets.sh
 ```
 
-#### Step 3.3: Setup Kubernetes Secrets
-```bash
-cd clusters/gke-southwest/manifests
+**What the script does:**
+- ✅ Creates `consul` namespace
+- ✅ Creates Enterprise license secret
+- ✅ Creates CA certificate and key secrets
+- ✅ Creates bootstrap token secret (or placeholder)
+- ✅ Creates DNS token secret
+- ✅ Creates gossip encryption key (if available)
 
-# Run the setup script
-./setup-secrets-southwest.sh
-
-# Update the Helm values with actual server IPs
-# Edit gke-consul-values-southwest.yaml:
-# - Replace <dc1-consul-server-ip-*> with actual IPs
-# - Replace <gke-southwest-api-endpoint> with cluster endpoint
+**Expected Output:**
+```
+Creating Consul secrets for GKE Southwest cluster...
+Warning: No terraform state found. Using hardcoded values from configuration.
+Warning: No bootstrap token available. Using placeholder for gossip key.
+namespace/consul created
+secret/consul-ent-license created
+secret/consul-bootstrap-token created
+secret/consul-gossip-encryption-key created
+secret/consul-ca-cert created
+secret/consul-ca-key created
+secret/consul-dns-token created
+✅ All secrets created successfully for southwest cluster!
 ```
 
-#### Step 3.4: Deploy Consul
+### Step 4: Deploy Consul with Helm
+
 ```bash
-# Deploy Consul with southwest partition configuration
+# Add HashiCorp Helm repository
 helm repo add hashicorp https://helm.releases.hashicorp.com
 helm repo update
 
+# Deploy Consul with admin partition configuration
 helm install consul hashicorp/consul \
   --namespace consul \
-  --values gke-consul-values-southwest.yaml
+  --values helm/values.yaml \
+  --wait \
+  --timeout 10m
+```
 
-# Verify deployment
+### Step 5: Verify Deployment
+
+```bash
+# Check pods are running
 kubectl get pods -n consul
-kubectl get svc -n consul
+
+# Check services
+kubectl get services -n consul
+
+# View mesh gateway (for cross-partition communication)
+kubectl get service consul-mesh-gateway -n consul
+
+# Check connect inject webhook
+kubectl get mutatingwebhookconfiguration consul-consul-connect-injector
 ```
 
-### 4. Setup DTAP Environments
+**Expected Pods:**
+```
+NAME                                             READY   STATUS    RESTARTS
+consul-connect-injector-5f7b8b8c4d-xyz12        1/1     Running   0
+consul-controller-6d8f9c7b5c-abc34              1/1     Running   0
+consul-mesh-gateway-7c9d8f6b5a-def56            1/1     Running   0
+consul-webhook-cert-manager-789b456c78-ghi90    1/1     Running   0
+```
+
+## 📋 Manual Step-by-Step Process
+
+If you prefer manual deployment or need to customize the process:
+
+### Step 1: Create Namespace
 
 ```bash
-# Create environment-specific namespaces
-kubectl create namespace backend-test
-kubectl create namespace backend-acceptance
-kubectl create namespace backend-prod
-kubectl create namespace data-test
-kubectl create namespace data-acceptance
-kubectl create namespace data-prod
-
-# Label namespaces for Consul injection
-kubectl label namespace backend-test consul.hashicorp.com/connect-inject=true
-kubectl label namespace backend-acceptance consul.hashicorp.com/connect-inject=true
-kubectl label namespace backend-prod consul.hashicorp.com/connect-inject=true
-kubectl label namespace data-test consul.hashicorp.com/connect-inject=true
-kubectl label namespace data-acceptance consul.hashicorp.com/connect-inject=true
-kubectl label namespace data-prod consul.hashicorp.com/connect-inject=true
+kubectl create namespace consul
 ```
 
-## Configuration Details
+### Step 2: Create Secrets Manually
 
-### Network Configuration
-- **VPC**: `gke-southwest-gke-network` (isolated from west1)
-- **Subnet**: `gke-southwest-gke-subnet` (10.20.0.0/24)
-- **Pod CIDR**: 10.21.0.0/16 (non-overlapping with west1)
-- **Service CIDR**: 10.22.0.0/16 (non-overlapping with west1)
-- **Master CIDR**: 172.17.0.0/28
+#### Enterprise License
+```bash
+kubectl create secret generic consul-ent-license \
+  --namespace=consul \
+  --from-literal=key="$CONSUL_ENT_LICENSE"
+```
 
-### Admin Partition Features
-- ✅ **External Consul servers** (DC1/DC2 connection)
-- ✅ **Cross-partition mesh gateways** for west ↔ southwest communication
-- ✅ **Consul Connect** service mesh
-- ✅ **Enterprise namespaces** with DTAP separation
-- ✅ **ACL policies** per partition
-- ✅ **TLS encryption** end-to-end
+#### CA Certificate (from DC1)
+```bash
+kubectl create secret generic consul-ca-cert \
+  --namespace=consul \
+  --from-file=tls.crt="helm/consul-ca.pem"
+```
 
-## Cross-Partition Communication
+#### CA Private Key (from DC1)
+```bash
+kubectl create secret generic consul-ca-key \
+  --namespace=consul \
+  --from-file=tls.key="helm/consul-ca-key.pem"
+```
 
-### Service Discovery Examples
+#### Bootstrap Token
+```bash
+# Replace with actual token from DC1 cluster
+kubectl create secret generic consul-bootstrap-token \
+  --namespace=consul \
+  --from-literal=token="your-bootstrap-token"
+```
 
-#### Access West1 Services from Southwest1:
+#### DNS Token
+```bash
+kubectl create secret generic consul-dns-token \
+  --namespace=consul \
+  --from-literal=token="your-bootstrap-token"
+```
+
+#### Gossip Encryption Key
+```bash
+# Get from DC1: consul keyring -list
+kubectl create secret generic consul-gossip-encryption-key \
+  --namespace=consul \
+  --from-literal=key="your-gossip-key"
+```
+
+### Step 3: Deploy Consul
+```bash
+helm install consul hashicorp/consul \
+  --namespace consul \
+  --values helm/values.yaml
+```
+
+## 🔧 Configuration Details
+
+### Helm Values Configuration (`helm/values.yaml`)
+
+Key configuration parameters:
+
 ```yaml
-# In k8s-southwest, connect to k8s-west frontend
+global:
+  adminPartitions:
+    enabled: true
+    name: "k8s-southwest1"
+  
+externalServers:
+  enabled: true
+  hosts:
+    - "34.175.142.171"  # DC1 Server 1
+    - "34.175.10.229"   # DC1 Server 2
+    - "34.175.110.150"  # DC1 Server 3
+  k8sAuthMethodHost: "https://34.76.173.55"
+
+meshGateway:
+  enabled: true  # For cross-partition communication
+  
+connectInject:
+  enabled: true  # Service mesh injection
+  transparentProxy:
+    defaultEnabled: true
+```
+
+### External Server IPs
+
+The configuration connects to these DC1 Consul servers:
+- `34.175.142.171` (Server 1)
+- `34.175.10.229` (Server 2) 
+- `34.175.110.150` (Server 3)
+
+### k8s Auth Method Host
+
+Kubernetes API endpoint: `https://34.76.173.55`
+
+## 🧪 Demo Applications
+
+### Deploy Sample Application with Service Mesh
+
+```bash
+# Create demo namespace
+kubectl create namespace demo
+
+# Label for automatic injection
+kubectl label namespace demo consul.hashicorp.com/connect-inject=true
+
+# Deploy sample app
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-app
+  template:
+    metadata:
+      labels:
+        app: demo-app
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "demo-app"
+    spec:
+      containers:
+      - name: demo-app
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+---
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-proxy
-  annotations:
-    consul.hashicorp.com/connect-service-upstreams: "frontend.frontend-prod.k8s-west:9090"
+  name: demo-app
+  namespace: demo
 spec:
+  selector:
+    app: demo-app
   ports:
-  - port: 9090
-    targetPort: 9090
+  - port: 80
+    targetPort: 80
+EOF
 ```
 
-#### Access Southwest1 Services from West1:
-```yaml
-# In k8s-west, connect to k8s-southwest backend
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend-proxy
-  annotations:
-    consul.hashicorp.com/connect-service-upstreams: "backend-service.backend-prod.k8s-southwest:8080"
-spec:
-  ports:
-  - port: 8080
-    targetPort: 8080
-```
+### Verify Service Mesh Injection
 
-## Verification and Testing
-
-### Partition Status
 ```bash
-# Check partition registration
+# Check that sidecar proxy was injected
+kubectl get pods -n demo -o wide
+
+# Should see 2 containers (app + envoy sidecar)
+kubectl describe pod -n demo -l app=demo-app
+```
+
+## 📊 Verification and Testing
+
+### Check Admin Partition Status
+
+From DC1 Consul server:
+```bash
+export CONSUL_HTTP_ADDR="http://34.175.142.171:8500"
+export CONSUL_HTTP_TOKEN="your-bootstrap-token"
+
+# List partitions
 consul partition list
 
-# Verify services in southwest partition
-consul catalog services -partition k8s-southwest
-
-# Check mesh gateway connectivity
-kubectl get svc consul-mesh-gateway -n consul
+# List services in southwest partition
+consul catalog services -partition k8s-southwest1
 ```
 
-### Cross-Partition Connectivity
-```bash
-# Test connection from southwest to west
-kubectl exec -n backend-prod deployment/backend -- \
-  curl -s http://frontend.frontend-prod.k8s-west.consul:9090/health
-
-# Test connection from west to southwest  
-kubectl exec -n frontend-prod deployment/frontend -- \
-  curl -s http://backend-service.backend-prod.k8s-southwest.consul:8080/health
-```
-
-## File Structure
-
-```
-clusters/gke-southwest/
-├── terraform/                           # Infrastructure as Code
-│   ├── main.tf                         # GKE cluster configuration
-│   ├── variables.tf                    # Region-specific variables
-│   ├── outputs.tf                      # Cluster outputs
-│   └── providers.tf                    # GCP provider
-├── manifests/                          # Consul and app configurations (local only)
-│   ├── gke-consul-values-southwest.yaml # Southwest partition Helm values
-│   ├── setup-secrets-southwest.sh      # Secrets setup script
-│   └── app-manifests/                  # Application deployments
-│       ├── backend-test/               # Testing environment apps
-│       ├── backend-acceptance/         # Acceptance environment apps
-│       ├── backend-prod/               # Production environment apps
-│       └── data-services/              # Data layer applications
-└── README.md                           # This file
-```
-
-## Task Runner Commands
+### Test Cross-Partition Communication
 
 ```bash
-# Deployment
-task deploy-gke-southwest          # Deploy GKE cluster
-task gke-sw-auth                   # Authenticate kubectl
-task status-gke-southwest          # Check cluster status
-
-# Consul Management
-task gke-sw-setup-secrets          # Setup Consul secrets
-task gke-sw-deploy-consul          # Deploy Consul
-
-# Cleanup
-task destroy-gke-southwest         # Destroy cluster
+# From k8s-southwest1, query services in default partition
+kubectl exec -n demo deployment/demo-app -c demo-app -- \
+  nslookup consul.service.consul
 ```
 
-## Terraform Cloud Workspace
+### Check Mesh Gateway
 
-- **Workspace**: `GKE-southwest`
-- **Required Variables**:
-  - `gcp_project`: Your GCP project ID
-  - `gcp_sa`: Service account name  
-  - `owner`: Your identifier
+```bash
+# View mesh gateway logs
+kubectl logs -n consul -l app=consul,component=mesh-gateway
 
-## Troubleshooting
+# Check gateway service
+kubectl get service consul-mesh-gateway -n consul -o wide
+```
+
+## 🛠️ Troubleshooting
 
 ### Common Issues
 
-1. **Partition token authentication failure**
-   ```bash
-   # Verify partition token is correct
-   consul acl token read -id <partition-token>
-   ```
+#### 1. Pods stuck in pending state
+```bash
+# Check events
+kubectl get events -n consul --sort-by='.lastTimestamp'
 
-2. **Cross-partition connectivity issues**
-   ```bash
-   # Check mesh gateway status
-   kubectl logs -n consul -l app=consul,component=mesh-gateway
-   
-   # Verify intentions are configured
-   consul intention check frontend backend.backend-prod.k8s-southwest
-   ```
+# Check node resources
+kubectl describe nodes
+```
 
-3. **Secrets not found**
-   ```bash
-   # Verify all required secrets exist
-   kubectl get secrets -n consul
-   
-   # Check CA certificate validity
-   kubectl get secret consul-ca-cert -n consul -o yaml
-   ```
+#### 2. Connect inject webhook not working
+```bash
+# Check webhook configuration
+kubectl get mutatingwebhookconfiguration consul-consul-connect-injector
 
-## Next Steps
+# Check webhook logs
+kubectl logs -n consul -l app=consul,component=connect-injector
+```
 
-1. ✅ **Deploy southwest GKE cluster**
-2. ✅ **Configure admin partition**
-3. 🔄 **Deploy test applications to DTAP environments**
-4. 🔄 **Setup cross-partition service communication**
-5. 🔄 **Configure monitoring and observability**
-6. 🔄 **Implement CI/CD pipelines for DTAP promotion**
+#### 3. Secrets not found
+```bash
+# List all secrets
+kubectl get secrets -n consul
+
+# Check specific secret
+kubectl get secret consul-ent-license -n consul -o yaml
+```
+
+#### 4. External server connection issues
+```bash
+# Test connectivity to DC1 servers
+kubectl run test-pod --image=busybox:1.28 -i --tty --rm -- sh
+# From inside pod:
+nslookup 34.175.142.171
+telnet 34.175.142.171 8500
+```
+
+### Debug Commands
+
+```bash
+# Check all Consul resources
+kubectl get all -n consul
+
+# Describe failing pods
+kubectl describe pods -n consul
+
+# View all events
+kubectl get events -n consul --sort-by='.lastTimestamp'
+
+# Check service endpoints
+kubectl get endpoints -n consul
+```
+
+## 🎯 Demo Script
+
+For live demos, use this sequence:
+
+### 1. Pre-Demo Setup (5 minutes)
+```bash
+# Validate everything is ready
+./validate-certs.sh
+
+# Set license (prepare beforehand)
+export CONSUL_ENT_LICENSE="your-license"
+```
+
+### 2. Live Demo (10 minutes)
+```bash
+# Show empty cluster
+kubectl get all -n consul 2>/dev/null || echo "Consul namespace doesn't exist yet"
+
+# Create secrets (automated)
+./create-consul-secrets.sh
+
+# Deploy Consul
+helm install consul hashicorp/consul --namespace consul --values helm/values.yaml --wait
+
+# Show running cluster
+kubectl get all -n consul
+
+# Deploy demo app with service mesh
+kubectl create namespace demo
+kubectl label namespace demo consul.hashicorp.com/connect-inject=true
+# ... deploy demo app ...
+
+# Show service mesh injection
+kubectl get pods -n demo
+```
+
+### 3. Verification (5 minutes)
+```bash
+# Show partition in DC1 Consul UI
+echo "Visit: http://34.175.142.171:8500/ui/default/admin-partitions"
+
+# Show services registered
+consul catalog services -partition k8s-southwest1
+
+# Show mesh gateway
+kubectl get service consul-mesh-gateway -n consul
+```
+
+## 📁 File Structure
+
+```
+clusters/gke-southwest/
+├── README.md                          # This guide
+├── helm/
+│   ├── values.yaml                    # Consul Helm configuration
+│   ├── consul-ca.pem                  # CA certificate (from DC1)
+│   └── consul-ca-key.pem             # CA private key (from DC1)
+├── validate-certs.sh                  # Configuration validation script
+└── create-consul-secrets.sh          # Automated secrets creation
+```
+
+## 🔗 External References
+
+- [Consul Admin Partitions Documentation](https://developer.hashicorp.com/consul/docs/enterprise/admin-partitions)
+- [Consul on Kubernetes](https://developer.hashicorp.com/consul/docs/k8s)
+- [Consul Helm Chart Values](https://developer.hashicorp.com/consul/docs/k8s/helm)
+
+---
+
+**Demo Status**: ✅ Ready for deployment  
+**Last Updated**: July 2025  
+**Consul Version**: 1.21.0-ent  
+**Helm Chart**: hashicorp/consul latest

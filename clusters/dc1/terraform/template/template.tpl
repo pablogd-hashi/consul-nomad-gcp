@@ -51,7 +51,6 @@ sudo tee $CONSUL_DIR/consul.hcl > /dev/null <<EOF
 datacenter = "$DC"
 data_dir = "/opt/consul"
 node_name = "${node_name}"
-partition = "default"
 node_meta = {
   hostname = "$(hostname)"
   gcp_instance = "$(curl "http://metadata.google.internal/computeMetadata/v1/instance/name" -H "Metadata-Flavor: Google")"

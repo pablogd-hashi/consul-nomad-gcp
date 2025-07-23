@@ -6,9 +6,7 @@ terraform {
       name = "GKE-europe-west1"
     }
   }
-}
-
-terraform {
+  
   required_version = ">= 1.0.0"
   required_providers {
     google = {
@@ -23,6 +21,7 @@ data "google_client_config" "current" {}
 
 data "google_service_account" "owner_project" {
   account_id = var.gcp_sa
+  project    = var.gcp_project
 }
 
 # VPC creation

@@ -12,10 +12,10 @@ variable "image" {
   default = "consul-nomad"
 }
 variable "consul_version" {
-  default = "1.12.1"
+  default = "1.21.2+ent"
 }
 variable "nomad_version" {
-  default = "1.5.1"
+  default = "1.10.3+ent"
 }
 variable "vault_version" {
   default = "1.14.1"
@@ -51,7 +51,7 @@ source "googlecompute" "consul_nomad" {
   source_image_family = var.source_image_family
   image_name = "${var.image}-${local.consul_version_safe}-${local.nomad_version_safe}"
   image_family = var.image_family
-  machine_type = "n2-standard-2"
+  machine_type = "e2-standard-2"
   # disk_size = 50
   ssh_username = var.sshuser
   zone = var.gcp_zone

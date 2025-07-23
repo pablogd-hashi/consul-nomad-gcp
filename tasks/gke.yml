@@ -5,6 +5,7 @@ vars:
   GKE_SOUTHWEST_DIR: "../clusters/gke-southwest/terraform"
   DC1_DIR: "../clusters/dc1/terraform"
   DC2_DIR: "../clusters/dc2/terraform"
+  MICROSERVICES_DIR: "../consul/admin-partitions/manifests/microservices-demo"
 
 # GKE cluster deployment and management tasks
 tasks:
@@ -24,7 +25,7 @@ tasks:
 
   deploy-gke-southwest:
     desc: "Deploy GKE Southwest cluster (europe-southwest1) for admin partitions"
-    dir: "{{.GKE_SW_DIR}}"
+    dir: "{{.GKE_SOUTHWEST_DIR}}"
     cmds:
       - terraform init
       - terraform apply -auto-approve
@@ -57,13 +58,71 @@ tasks:
 
   auth-southwest:
     desc: "Authenticate kubectl with GKE Southwest cluster"
-    dir: "{{.GKE_SW_DIR}}"
+    dir: "{{.GKE_SOUTHWEST_DIR}}"
     cmds:
       - terraform output -raw gke_auth_command | sh
       - kubectl cluster-info
       - echo "Connected to GKE Southwest cluster"
       - echo "Region europe-southwest1"
       - echo "Ready for admin partition setup"
+
+  # === Streamlined Deployment ===
+  deploy-consul-both:
+    desc: "Deploy both GKE clusters with Consul admin partitions (one command)"
+    cmds:
+      - task: deploy-gke-southwest
+      - task: deploy-gke
+      - task: auth-southwest
+      - task: deploy-consul-southwest
+      - task: auth
+      - task: deploy-consul
+      - echo "Both GKE clusters deployed with Consul admin partitions!"
+      - echo "Southwest - k8s-southwest1 partition"
+      - echo "West1 - k8s-west1 partition"
+
+  deploy-consul-southwest-full:
+    desc: "Deploy GKE Southwest cluster with Consul admin partition (one command)"
+    cmds:
+      - task: deploy-gke-southwest
+      - task: auth-southwest
+      - task: create-admin-partitions
+      - task: deploy-consul-southwest-auto
+      - echo "GKE Southwest deployed with k8s-southwest1 admin partition!"
+
+  deploy-consul-full:
+    desc: "Deploy GKE West1 cluster with Consul admin partition (one command)"
+    cmds:
+      - task: deploy-gke
+      - task: auth
+      - task: create-admin-partitions
+      - task: deploy-consul-auto
+      - echo "GKE West1 deployed with k8s-west1 admin partition!"
+
+  create-admin-partitions:
+    desc: "Create admin partitions and namespaces on DC1 Consul"
+    dir: "{{.DC1_DIR}}"
+    cmds:
+      - ./create-admin-partitions.sh
+
+  deploy-consul-auto:
+    desc: "Deploy Consul to GKE West1 with automated secrets setup"
+    dir: "../clusters/gke-europe-west1"
+    cmds:
+      - ./create-consul-secrets.sh
+      - helm repo add hashicorp https://helm.releases.hashicorp.com
+      - helm repo update
+      - helm install consul hashicorp/consul --namespace consul --values helm/values.yaml
+      - echo "Consul deployed to k8s-west1 partition"
+
+  deploy-consul-southwest-auto:
+    desc: "Deploy Consul to GKE Southwest with automated secrets setup"
+    dir: "../clusters/gke-southwest"
+    cmds:
+      - ./create-consul-secrets.sh
+      - helm repo add hashicorp https://helm.releases.hashicorp.com
+      - helm repo update
+      - helm install consul hashicorp/consul --namespace consul --values helm/values.yaml
+      - echo "Consul deployed to k8s-southwest1 partition"
 
   # === Consul Setup ===
   setup-secrets:
@@ -130,7 +189,7 @@ tasks:
 
   status-southwest:
     desc: "Show GKE Southwest status"
-    dir: "{{.GKE_SW_DIR}}"
+    dir: "{{.GKE_SOUTHWEST_DIR}}"
     cmds:
       - terraform output cluster_info || echo "No GKE Southwest cluster info available"
       - echo "=== kubectl Authentication ==="
@@ -199,7 +258,7 @@ tasks:
 
   destroy-gke-southwest:
     desc: "Destroy GKE Southwest cluster"
-    dir: "{{.GKE_SW_DIR}}"
+    dir: "{{.GKE_SOUTHWEST_DIR}}"
     cmds:
       - terraform destroy -auto-approve
 
@@ -208,3 +267,64 @@ tasks:
     cmds:
       - task: destroy-gke
       - task: destroy-gke-southwest
+      - echo "All GKE clusters destroyed!"
+
+  # === Microservices Demo Deployment ===
+  deploy-microservices-all:
+    desc: "Deploy microservices demo to all partitions and namespaces"
+    dir: "{{.MICROSERVICES_DIR}}"
+    cmds:
+      - ./deploy-all.sh
+      - echo "Microservices demo deployed to all 6 environments"
+
+  deploy-microservices-west1:
+    desc: "Deploy microservices demo to k8s-west1 partition"
+    dir: "{{.MICROSERVICES_DIR}}"
+    cmds:
+      - ./deploy-k8s-west1.sh
+      - echo "Microservices demo deployed to k8s-west1 partition"
+
+  deploy-microservices-southwest1:
+    desc: "Deploy microservices demo to k8s-southwest1 partition"
+    dir: "{{.MICROSERVICES_DIR}}"
+    cmds:
+      - ./deploy-k8s-southwest1.sh
+      - echo "Microservices demo deployed to k8s-southwest1 partition"
+
+  status-microservices:
+    desc: "Check microservices demo status in all environments"
+    cmds:
+      - echo "=== k8s-west1 Development ==="
+      - task: auth
+      - kubectl get pods -n development
+      - echo ""
+      - echo "=== k8s-west1 Testing ==="
+      - kubectl get pods -n testing
+      - echo ""
+      - echo "=== k8s-west1 Acceptance ==="
+      - kubectl get pods -n acceptance
+      - echo ""
+      - echo "=== k8s-southwest1 Development ==="
+      - task: auth-southwest
+      - kubectl get pods -n development
+      - echo ""
+      - echo "=== k8s-southwest1 Testing ==="
+      - kubectl get pods -n testing
+      - echo ""
+      - echo "=== k8s-southwest1 Production ==="
+      - kubectl get pods -n production
+
+  get-frontend-urls:
+    desc: "Get frontend LoadBalancer URLs for all environments"
+    cmds:
+      - echo "=== k8s-west1 Frontend URLs ==="
+      - task: auth
+      - echo -n "Development- " && kubectl get svc frontend-external -n development -o jsonpath='{.status.loadBalancer.ingress[0].ip}' && echo ""
+      - echo -n "Testing- " && kubectl get svc frontend-external -n testing -o jsonpath='{.status.loadBalancer.ingress[0].ip}' && echo ""
+      - echo -n "Acceptance- " && kubectl get svc frontend-external -n acceptance -o jsonpath='{.status.loadBalancer.ingress[0].ip}' && echo ""
+      - echo ""
+      - echo "=== k8s-southwest1 Frontend URLs ==="
+      - task: auth-southwest
+      - echo -n "Development- " && kubectl get svc frontend-external -n development -o jsonpath='{.status.loadBalancer.ingress[0].ip}' && echo ""
+      - echo -n "Testing- " && kubectl get svc frontend-external -n testing -o jsonpath='{.status.loadBalancer.ingress[0].ip}' && echo ""
+      - echo -n "Production- " && kubectl get svc frontend-external -n production -o jsonpath='{.status.loadBalancer.ingress[0].ip}' && echo ""

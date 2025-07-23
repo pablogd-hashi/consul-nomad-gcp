@@ -1,4 +1,11 @@
-gcp_project = "hc-1031dcc8d7c24bfdbb4c08979b0"
-gcp_sa = "hc-1031dcc8d7c24bfdbb4c08979b0"
+gcp_project = "hc-6e62239184664d288bfcec8c6f8"
+gcp_sa = "terraform-sa"
 cluster_name = "gke-southwest"
 owner = "pablo.diaz"
+gcp_region = "europe-southwest1"
+gcp_zones = ["europe-southwest1-a", "europe-southwest1-b", "europe-southwest1-c"]
+node_count = 1
+min_node_count = 1
+max_node_count = 3
+disk_size_gb = 50
+preemptible_nodes = false

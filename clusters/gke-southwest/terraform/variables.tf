@@ -9,8 +9,8 @@ variable "gcp_zones" {
   default     = ["europe-southwest1-a", "europe-southwest1-b", "europe-southwest1-c"]
   
   validation {
-    condition     = alltrue([for zone in var.gcp_zones : contains(regexall("[a-z]+-[a-z]+[0-1]-[a-z]", zone), zone)])
-    error_message = "The GCP zones ${join(",", var.gcp_zones)} needs to be a valid one."
+    condition     = alltrue([for zone in var.gcp_zones : can(regex("^[a-z]+-[a-z]+[0-9]+-[a-z]+$", zone))])
+    error_message = "The GCP zones must be in format region-zone (e.g., europe-southwest1-a)."
   }
 }
 

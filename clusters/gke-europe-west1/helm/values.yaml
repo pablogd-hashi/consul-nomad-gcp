@@ -57,9 +57,11 @@ externalServers:
   enabled: true
   hosts:
     # DC1 Server IPs - Updated with actual IPs
-    - "34.175.142.171"
-    - "34.175.10.229"
-    - "34.175.110.150"
+    - "34.118.80.123"
+    - "34.118.37.87"
+    - "34.118.58.225"
+  httpsPort: 8501
+  grpcPort: 8502
   tlsServerName: server.gcp-dc1.consul
   k8sAuthMethodHost: "https://34.76.173.55"
 

@@ -43,6 +43,19 @@ resource "google_compute_instance_template" "instance_template" {
     scopes = ["cloud-platform", "compute-rw", "compute-ro", "userinfo-email", "storage-ro"]
   }
 
+  metadata_startup_script = templatefile("${path.module}/template/template.tpl",{
+    dc_name = var.cluster_name,
+    gcp_project = var.gcp_project,
+    tag = var.cluster_name,
+    consul_license = var.consul_license,
+    nomad_license = var.nomad_license,
+    bootstrap_token = var.consul_bootstrap_token,
+    nomad_token = random_uuid.nomad_bootstrap.result,
+    zone = var.gcp_region,
+    node_name = "server",
+    nomad_bootstrapper = false
+  })
+
   lifecycle {
     create_before_destroy = true
   }
