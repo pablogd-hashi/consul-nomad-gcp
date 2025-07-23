@@ -3,6 +3,58 @@
 
 **Customer Story**: Demonstrate governance-driven service promotion from development to production with automated infrastructure updates through Consul Terraform Sync (CTS).
 
+## Prerequisites
+
+Before starting this demo, ensure you have completed the following setup:
+
+### 1. Admin Partitions Setup
+This demo requires Consul Enterprise admin partitions to be properly configured. Follow the complete setup guide:
+
+**📖 [Admin Partitions Setup Guide](../admin-partitions/README.md)**
+
+Key requirements:
+- ✅ DC1 HashiStack cluster deployed with Consul Enterprise
+- ✅ GKE clusters configured as admin partition clients
+- ✅ k8s-west1 admin partition created and connected
+- ✅ Consul Connect service mesh enabled
+- ✅ Cross-partition networking configured
+
+### 2. Nomad API Gateway Deployment
+The demo uses a Nomad-deployed API Gateway for external access. Deploy it following:
+
+**📖 [API Gateway Deployment Guide](../../nomad-apps/api-gw.nomad/README.md)**
+
+Key requirements:
+- ✅ API Gateway running in Nomad cluster (port 8081)
+- ✅ HTTP listener configured for external traffic
+- ✅ Consul integration enabled for service discovery
+- ✅ Gateway registered in Consul service catalog
+
+### 3. Environment Validation
+
+Verify your setup is ready:
+
+```bash
+# Check admin partition connectivity
+export CONSUL_HTTP_ADDR="http://<dc1-server-ip>:8500"
+export CONSUL_HTTP_TOKEN="<bootstrap-token>"
+consul partition list
+
+# Check API Gateway is running
+nomad job status my-api-gateway
+consul catalog services | grep api-gateway
+
+# Check GKE cluster connectivity
+kubectl get nodes
+kubectl get pods -n consul
+```
+
+**Expected Results:**
+- Consul should show `k8s-west1` partition in the list
+- Nomad should show `my-api-gateway` job as running
+- API Gateway should be registered in Consul services
+- GKE cluster should have Consul pods running
+
 ## Architecture Overview
 
 ```
