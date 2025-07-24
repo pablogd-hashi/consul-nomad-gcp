@@ -574,14 +574,209 @@ consul/admin-partitions/
             └── production/
 ```
 
+## 🛍️ Google Boutique Microservices Demo
+
+### Overview
+
+Successfully deployed a minimal Google Boutique microservices application to demonstrate Consul service mesh functionality in the k8s-southwest1 admin partition. This deployment showcases:
+
+- **Service Mesh Integration**: All services running with Consul Connect sidecar injection
+- **Cross-Service Communication**: Frontend → Product Catalog, Cart, Currency services
+- **Data Persistence**: Cart service → Redis with transparent proxy
+- **Admin Partition Configuration**: Services properly registered in k8s-southwest1 partition
+- **Service Intentions**: Required for service-to-service communication in Consul Enterprise
+
+### Architecture
+
+```
+Frontend (8080) → Product Catalog Service (3550)
+              → Cart Service (7070) → Redis (6379)
+              → Currency Service (7000)
+```
+
+### Deployment Files
+
+**Location**: `/consul/demo-all/boutique-minimal.yaml`
+
+This minimal deployment includes:
+- **Frontend**: Web UI for the boutique application
+- **Product Catalog Service**: Manages product inventory
+- **Cart Service**: Handles shopping cart operations
+- **Currency Service**: Provides currency conversion
+- **Redis**: Cache/storage for cart data
+
+### Key Configuration
+
+**Critical Settings for k8s-southwest1 partition:**
+
+```yaml
+annotations:
+  consul.hashicorp.com/connect-inject: "true"
+  consul.hashicorp.com/partition: "k8s-southwest1"  # Must match actual partition name
+  consul.hashicorp.com/namespace: "development"
+  consul.hashicorp.com/connect-service-upstreams: "productcatalogservice.development.k8s-southwest1:3550,cartservice.development.k8s-southwest1:7070,currencyservice.development.k8s-southwest1:7000"
+```
+
+### Deployment Steps
+
+#### Automated Deployment (Recommended)
+
+The easiest way to deploy the boutique application is using the provided Taskfile:
+
+```bash
+# Complete automated deployment workflow
+task deploy-boutique-full
+
+# Or run individual steps:
+task deploy-boutique              # Deploy the application
+task create-boutique-intentions   # Create service intentions 
+task test-boutique               # Test the deployment
+task port-forward-frontend       # Access the frontend UI
+```
+
+#### Manual Deployment
+
+```bash
+# 1. Switch to k8s-southwest1 cluster
+kubectl config use-context gke_hc-6e62239184664d288bfcec8c6f8_europe-southwest1_gke-southwest-gke
+
+# 2. Deploy the application
+kubectl apply -f consul/demo-all/boutique-minimal.yaml
+
+# 3. Verify deployment
+kubectl get pods -n development
+# Expected: All pods showing 2/2 Ready (app + consul-dataplane sidecar)
+
+# 4. Create service intentions (required for Enterprise)
+consul intention create -allow frontend currencyservice.development.k8s-southwest1
+consul intention create -allow frontend productcatalogservice.development.k8s-southwest1
+consul intention create -allow frontend cartservice.development.k8s-southwest1
+consul intention create -allow cartservice redis-cart.development.k8s-southwest1
+
+# 5. Test the application
+kubectl port-forward svc/frontend 8080:80 -n development
+curl http://localhost:8080
+```
+
+### Available Taskfile Commands
+
+| Command | Description |
+|---------|-------------|
+| `task deploy-boutique-full` | Complete automated deployment workflow |
+| `task deploy-boutique` | Deploy boutique services to k8s-southwest1 |
+| `task create-boutique-intentions` | Create service intentions for communication |
+| `task test-boutique` | Test application functionality |
+| `task status-boutique` | Show deployment status |
+| `task logs-boutique` | Show logs from all services |
+| `task debug-boutique` | Debug application issues |
+| `task clean-boutique` | Remove application and intentions |
+| `task redeploy-boutique` | Clean and redeploy application |
+| `task port-forward-frontend` | Start port-forward to frontend UI |
+
+### Troubleshooting Guide
+
+#### Issue 1: Partition Name Mismatch
+
+**Problem**: Services registered in different partition than configured in upstreams.
+
+**Symptoms**:
+```
+rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:7000: connect: connection refused"
+```
+
+**Root Cause**: Consul Helm values.yaml had partition name `k8s-southwest1` but application YAML used `k8s-west1`.
+
+**Solution**: Ensure consistency between Helm values and application manifests:
+
+```bash
+# Check actual partition name from Envoy clusters
+kubectl port-forward deployment/frontend 19000:19000 -n development
+curl -s http://localhost:19000/clusters | grep currency
+# Look for: currencyservice.development.k8s-southwest1.gcp-dc1.internal...
+
+# Update application YAML to match:
+consul.hashicorp.com/partition: "k8s-southwest1"  # Match actual partition
+consul.hashicorp.com/connect-service-upstreams: "service.namespace.k8s-southwest1:port"
+```
+
+#### Issue 2: Missing Service Intentions
+
+**Problem**: Consul Enterprise requires explicit service intentions for communication.
+
+**Symptoms**: Connection refused errors between services even with correct configuration.
+
+**Solution**: Create allow intentions for all service-to-service communication:
+
+```bash
+# Frontend to all backend services
+consul intention create -allow frontend.development.k8s-southwest1 currencyservice.development.k8s-southwest1
+consul intention create -allow frontend.development.k8s-southwest1 productcatalogservice.development.k8s-southwest1
+consul intention create -allow frontend.development.k8s-southwest1 cartservice.development.k8s-southwest1
+
+# Cart service to Redis
+consul intention create -allow cartservice.development.k8s-southwest1 redis-cart.development.k8s-southwest1
+```
+
+#### Issue 3: xDS Stream Limits (Consul 1.21.0 Bug)
+
+**Problem**: "Too many xDS streams open" prevents large deployments.
+
+**Symptoms**: Pods fail to start with xDS stream limit errors.
+
+**Solution**: Deploy minimal service sets to stay under limits:
+
+- **Phase 1**: Core services (frontend, product catalog, cart, redis) = 4 services
+- **Phase 2**: Add payment services = 6 services total
+- **Monitor**: Check xDS stream usage in Consul logs
+
+### Verification Commands
+
+```bash
+# Check pod status
+kubectl get pods -n development
+
+# Verify Consul service registration
+export CONSUL_HTTP_ADDR="http://34.88.73.4:8500"
+export CONSUL_HTTP_TOKEN="<bootstrap-token>"
+consul catalog services -partition k8s-southwest1 -namespace development
+
+# Check service mesh connectivity
+kubectl logs deployment/frontend -n development -c server
+kubectl logs deployment/frontend -n development -c consul-dataplane
+
+# Test frontend access
+kubectl port-forward svc/frontend 8080:80 -n development
+curl http://localhost:8080
+
+# Check Envoy configuration
+kubectl port-forward deployment/frontend 19000:19000 -n development
+curl http://localhost:19000/clusters | grep -E "(currency|cart|product)"
+```
+
+### Success Metrics
+
+- ✅ **All pods healthy**: 5 pods showing 2/2 Ready status
+- ✅ **Services registered**: All services visible in Consul catalog
+- ✅ **Service mesh working**: Frontend can reach all backend services
+- ✅ **Web UI functional**: Frontend returns HTTP 200 with product listings
+- ✅ **Persistent storage**: Cart operations work with Redis backend
+
+### Known Limitations
+
+1. **xDS Stream Limits**: Consul 1.21.0 has a bug limiting concurrent xDS streams. Keep deployments under ~6-8 services total.
+2. **Partition Naming**: Must ensure consistency between Helm values and application annotations.
+3. **Service Intentions**: Required for all service-to-service communication in Enterprise mode.
+4. **TLS Configuration**: CA certificates must be current and match server IPs.
+
 ## ✅ Success Criteria
 
-- [ ] Both admin partitions created and accessible
-- [ ] All ACL policies and roles configured
-- [ ] Both GKE clusters running Consul with correct partition names
-- [ ] All environment namespaces created and labeled
+- [x] Both admin partitions created and accessible
+- [x] All ACL policies and roles configured
+- [x] Both GKE clusters running Consul with correct partition names
+- [x] All environment namespaces created and labeled
 - [ ] API gateways deployed to both DC1 and DC2
-- [ ] Demo applications deployed to all environments
-- [ ] Cross-partition service discovery working
+- [x] Demo applications deployed to all environments
+- [x] Cross-partition service discovery working
 - [ ] API gateway routing functional
-- [ ] All services visible in Consul UI with correct partitions/namespaces
+- [x] All services visible in Consul UI with correct partitions/namespaces
+- [x] **Google Boutique microservices demo working in k8s-southwest1 partition**

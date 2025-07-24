@@ -118,6 +118,11 @@ sudo tee $CONSUL_DIR/server.hcl > /dev/null <<EOF
 server = true
 bootstrap_expect = 3
 
+# Increase concurrent streams for service mesh
+limits {
+  grpc_max_requests_per_stream = 1000
+}
+
 ui = true
 client_addr = "0.0.0.0"
 bind_addr = "$PRIVATE_IP"
